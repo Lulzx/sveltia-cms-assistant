@@ -1,0 +1,32 @@
+{
+  "name": "sveltia-cms-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sveltia CMS admin with a writing assistant and Yoast-style SEO panel, configurable for any site.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lulzx/sveltia-cms-assistant.git"
+  },
+  "keywords": [
+    "sveltia-cms",
+    "decap-cms",
+    "seo",
+    "yoast",
+    "openrouter",
+    "markdown"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "serve": "node scripts/serve.mjs",
+    "dev": "node scripts/build.mjs && node scripts/serve.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@sveltia/cms": "^0.197.0"
+  }
+}

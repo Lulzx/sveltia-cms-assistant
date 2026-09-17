@@ -1,0 +1,24 @@
+# Serving the admin bundle with Caddy behind basic auth.
+#
+# If the build baked in CMS_GITHUB_TOKEN or OPENROUTER_API_KEY, this auth is
+# the only thing keeping those secrets private. It is not an extra layer.
+#
+# Make a password hash with:
+#   caddy hash-password --plaintext 'a long random password'
+
+admin.example.com {
+	basic_auth {
+		editor $2a$14$REPLACE_WITH_THE_HASH_FROM_caddy_hash-password
+	}
+
+	root * /srv/www/cms-admin
+	file_server
+	encode gzip
+
+	header {
+		X-Robots-Tag "noindex, nofollow"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+		Cache-Control "no-store"
+	}
+}

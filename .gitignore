@@ -1,0 +1,9 @@
+node_modules/
+# Build output can contain a GitHub token and an OpenRouter key.
+dist/
+.env
+.env.*
+# Your site's copies of the example configs.
+assistant.config.mjs
+cms.config.yml
+.DS_Store

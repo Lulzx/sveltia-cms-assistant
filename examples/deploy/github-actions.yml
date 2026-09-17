@@ -1,0 +1,88 @@
+# .github/workflows/cms-admin.yml
+#
+# Builds the admin bundle and rsyncs it to a server that serves it behind
+# auth (see Caddyfile). Assumes the kit lives in `cms/` in your repo;
+# adjust the paths otherwise.
+#
+# Repo secrets:
+#   CMS_GITHUB_TOKEN      optional, fine-grained PAT with Contents read/write on
+#                         this repo; opens the editor already signed in
+#   OPENROUTER_API_KEY    optional, turns on the writer and Fix buttons
+#   DEPLOY_SSH_KEY        private key allowed to write DEPLOY_DIR
+#   DEPLOY_KNOWN_HOSTS    output of `ssh-keyscan your.server`
+# Repo variables:
+#   DEPLOY_TARGET         user@host
+#   DEPLOY_DIR            e.g. /srv/www/cms-admin
+#   ADMIN_URL             e.g. https://admin.example.com/
+#   OPENROUTER_MODEL      optional model id
+
+name: Publish CMS admin
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cms/**"
+      - ".github/workflows/cms-admin.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: publish-cms-admin
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: cms
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: cms/package-lock.json
+
+      - run: npm ci
+
+      - name: Build
+        env:
+          CMS_GITHUB_TOKEN: ${{ secrets.CMS_GITHUB_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+        run: npm run build
+
+      - name: Authorise the server
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Ship
+        env:
+          TARGET: ${{ vars.DEPLOY_TARGET }}
+          DIR: ${{ vars.DEPLOY_DIR }}
+        run: |
+          set -euo pipefail
+          SSH="ssh -i ~/.ssh/id_deploy -o BatchMode=yes"
+          $SSH "$TARGET" "mkdir -p '$DIR'"
+          rsync -az --delete --delay-updates -e "$SSH" dist/ "$TARGET:$DIR/"
+
+      - name: Check the admin still asks for credentials
+        env:
+          ADMIN_URL: ${{ vars.ADMIN_URL }}
+        run: |
+          set -euo pipefail
+          code=$(curl --silent --output /dev/null --write-out '%{http_code}' "$ADMIN_URL")
+          if [ "$code" != "401" ]; then
+            echo "::error::$ADMIN_URL answered $code, expected 401. The bundle may be public."
+            exit 1
+          fi

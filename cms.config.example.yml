@@ -1,0 +1,102 @@
+# yaml-language-server: $schema=https://unpkg.com/@sveltia/cms/schema/sveltia-cms.json
+#
+# Copy to cms.config.yml. The build publishes it as config.yml next to the
+# admin page. Any Sveltia CMS configuration works; the only requirement for
+# the assistant is one field with `widget: seo`, whose `name` matches
+# fields.keyphrase in assistant.config.mjs (default "keyphrase").
+#
+# The field names below are the assistant's defaults. If your collection
+# uses others, map them under `fields` in assistant.config.mjs.
+#
+# Sveltia commits straight to the repo; GitHub is the database. Your site's
+# build has to accept every field here (e.g. an Astro content schema) or a
+# post saved in the editor fails the site build instead of the editor.
+
+backend:
+  name: github
+  repo: your-org/your-repo
+  branch: main
+  # With no base_url the sign-in screen asks for a personal access token
+  # (or the build bakes one in; see the README). To let editors "Sign in
+  # with GitHub" instead, deploy sveltia/sveltia-cms-auth and set:
+  # base_url: https://sveltia-cms-auth.your-account.workers.dev
+  commit_messages:
+    create: "Add post “{{slug}}”"
+    update: "Update post “{{slug}}”"
+    delete: "Delete post “{{slug}}”"
+    uploadMedia: "Add image {{path}}"
+    deleteMedia: "Delete image {{path}}"
+
+site_url: https://example.com/blog/
+display_url: https://example.com/blog/
+
+media_folder: public/media
+public_folder: /media
+
+slug:
+  encoding: ascii
+  clean_accents: true
+  sanitize_replacement: "-"
+
+collections:
+  - name: posts
+    label: Posts
+    label_singular: Post
+    folder: src/content/posts
+    create: true
+    delete: true
+    extension: md
+    format: frontmatter
+    slug: "{{slug}}"
+    preview_path: "{{slug}}/"
+    summary: "{{title}}"
+    sortable_fields: [pubDate, title]
+    # The Markdown field is already WYSIWYG; the side-by-side preview would
+    # show the same thing twice and halve the editor's width.
+    editor:
+      preview: false
+    fields:
+      - label: Title
+        name: title
+        widget: string
+        required: true
+      - label: Description
+        name: description
+        widget: text
+        required: true
+        hint: One or two sentences. Used as the search-result snippet and the link preview.
+      - label: Focus keyphrase
+        name: keyphrase
+        widget: seo
+        required: false
+        hint: The phrase this post should rank for. Advice only; it never blocks a save.
+      - label: Published on
+        name: pubDate
+        widget: datetime
+        required: true
+        default: "{{now}}"
+        time_format: false
+        date_format: "YYYY-MM-DD"
+        format: "YYYY-MM-DD"
+      - label: Cover image
+        name: cover
+        widget: image
+        required: false
+      - label: Cover image alt text
+        name: coverAlt
+        widget: string
+        required: false
+      - label: Tags
+        name: tags
+        widget: list
+        required: false
+        default: []
+        field: { label: Tag, name: tag, widget: string }
+      - label: Draft
+        name: draft
+        widget: boolean
+        default: false
+      - label: Body
+        name: body
+        widget: markdown
+        required: true
