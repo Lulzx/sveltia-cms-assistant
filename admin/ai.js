@@ -430,7 +430,7 @@
         /* fall through to the message below */
       }
     }
-    throw new Error("The model answered in prose, not JSON. Try again — the free router picks a different model each time.");
+    throw new Error("The model answered in prose, not JSON. Try again.");
   }
 
   /**
@@ -485,7 +485,7 @@
       if (!response.ok) {
         return response.text().then(function (text) {
           if (response.status === 429) {
-            throw new Error("Rate limited — the free tier allows about 20 requests a minute. Wait a moment and try again.");
+            throw new Error("Rate limited by OpenRouter. Wait a moment and try again.");
           }
           var detail = text.slice(0, 200);
           try {
@@ -541,8 +541,8 @@
   }
 
   /**
-   * stream(), retried when the free tier's limiter answers or the router
-   * lands on a model that returns nothing. Each try may reach a different
+   * stream(), retried when OpenRouter's limiter answers or the model
+   * returns nothing. Under the free router each try may reach a different
    * model, which is the point.
    */
   function complete(task, input, options) {
