@@ -245,6 +245,7 @@
         // come and go, and a check that has been fixed stops being offered.
         selected: {},
         meta: null,
+        metaFields: [], // the fields the meta checks were about
         fixEdits: null,
         fixing: [],
 
@@ -800,8 +801,10 @@
       if (!checks.length || this.state.job) return;
 
       var groups = { meta: [], body: [] };
+      var metaFields = [];
       checks.forEach(function (result) {
         groups[result.field === "body" ? "body" : "meta"].push(result.text);
+        if (result.field !== "body" && metaFields.indexOf(result.field) === -1) metaFields.push(result.field);
       });
       var kinds = Object.keys(groups).filter(function (kind) {
         return groups[kind].length;
@@ -810,6 +813,7 @@
       var signal = this.startJob("Fixing " + checks.length + " check" + (checks.length === 1 ? "" : "s"), kinds.length);
       this.setState({
         meta: null,
+        metaFields: metaFields,
         fixEdits: null,
         applied: {},
         fixing: checks.map(function (result) {
@@ -818,7 +822,7 @@
       });
 
       kinds.forEach(function (kind) {
-        var input = Object.assign(self.inputs(post), { checks: groups[kind], prose: post.prose, body: post.body });
+        var input = Object.assign(self.inputs(post), { checks: groups[kind], fields: metaFields, prose: post.prose, body: post.body });
         AI.complete(kind, input, { signal: signal, onDelta: self.onDelta(), onRetry: self.onRetry() })
           .then(function (answer) {
             if (kind === "meta") {
@@ -827,6 +831,9 @@
                 if (typeof answer[key] === "string") meta[key] = answer[key];
               });
               self.setState({ meta: meta });
+              if (!self.metaChanges(meta, post, metaFields).length) {
+                self.setState({ note: "The model left the title, description and keyphrase alone." });
+              }
             } else {
               self.setState({ fixEdits: cleanEdits(answer.edits) });
             }
@@ -1376,12 +1383,18 @@
       var self = this;
       if (!list) return null;
 
-      var rows = list.map(function (edit, index) {
+      // Applied edits leave the list; once every one is in, so does the card.
+      var pending = list.filter(function (edit) {
+        return !self.state.applied[editKey(edit)];
+      });
+      if (list.length && !pending.length) return null;
+
+      var rows = pending.map(function (edit) {
         var key = editKey(edit);
         var append = !edit.where || !edit.where.trim();
         return h(
           "div",
-          { key: index, className: "ca-edit" },
+          { key: key, className: "ca-edit" },
           append
             ? h("div", { className: "ca-muted" }, "Add at the end")
             : h("div", { className: "ca-where" }, edit.where.slice(0, 200) + (edit.where.length > 200 ? "…" : "")),
@@ -1394,12 +1407,11 @@
             button(
               {
                 kind: "small",
-                disabled: !!self.state.applied[key],
                 onClick: function () {
                   self.applyEdit(edit);
                 },
               },
-              self.state.applied[key] ? "Applied" : "Apply",
+              "Apply",
             ),
           ),
         );
@@ -1411,12 +1423,12 @@
         h(
           "span",
           { className: "ca-row" },
-          list.length > 1
+          pending.length > 1
             ? button(
                 {
                   kind: "small",
                   onClick: function () {
-                    self.applyAll(list);
+                    self.applyAll(pending);
                   },
                 },
                 "Apply all",
@@ -1564,51 +1576,55 @@
       var edits = this.state.fixEdits;
       if (!meta && !edits) return null;
 
-      // The model returns every metadata field whether or not it changed it,
-      // so only what actually differs is worth showing.
-      var changed = [];
-      if (meta) {
-        if (meta.title && meta.title.trim() !== post.title.trim()) {
-          changed.push(
-            this.suggestion("Title", meta.title, function () {
-              return F.set(FIELDS.title, meta.title);
-            }),
-          );
-        }
-        if (meta.description && meta.description.trim() !== post.description.trim()) {
-          changed.push(
-            this.suggestion("Description", meta.description, function () {
-              return F.set(FIELDS.description, meta.description);
-            }),
-          );
-        }
-        if (meta.keyphrase && A.normalize(meta.keyphrase) !== A.normalize(props.value)) {
-          changed.push(
-            this.suggestion("Focus keyphrase", meta.keyphrase, function () {
+      // A suggestion that has been applied now matches the post, so it drops
+      // out here, and the card goes with the last one.
+      var changed = meta
+        ? this.metaChanges(meta, post, this.state.metaFields).map(function (key) {
+            if (key === "title") {
+              return self.suggestion("Title", meta.title, function () {
+                return F.set(FIELDS.title, meta.title);
+              });
+            }
+            if (key === "description") {
+              return self.suggestion("Description", meta.description, function () {
+                return F.set(FIELDS.description, meta.description);
+              });
+            }
+            return self.suggestion("Focus keyphrase", meta.keyphrase, function () {
               // This one is our own field, so it needs no DOM at all.
               props.onChange(meta.keyphrase);
               return true;
-            }),
-          );
-        }
-      }
+            });
+          })
+        : [];
 
       var dismiss = function () {
         self.setState({ meta: null, fixEdits: null });
       };
+      var bodyCard = edits ? this.renderEdits("Body edits", edits, dismiss) : null;
 
       return h(
         "div",
         null,
-        meta
-          ? card(
-              "Metadata",
-              changed.length ? changed : h("p", { className: "ca-muted", style: { margin: 0 } }, "The model left the title, description and keyphrase alone."),
-              edits ? null : button({ kind: "small", onClick: dismiss }, "Dismiss"),
-            )
-          : null,
-        edits ? this.renderEdits("Body edits", edits, dismiss) : null,
+        changed.length ? card("Metadata", changed, bodyCard ? null : button({ kind: "small", onClick: dismiss }, "Dismiss")) : null,
+        bodyCard,
       );
+    },
+
+    /**
+     * The metadata fields the model's answer would change. It returns every
+     * field whether or not it touched it, so only what differs counts, and
+     * only in a field one of the checks was about: asked to work the
+     * keyphrase into the title, a model will sometimes swap the keyphrase.
+     */
+    metaChanges: function (meta, post, fields) {
+      var changed = [];
+      if (meta.title && meta.title.trim() !== post.title.trim()) changed.push("title");
+      if (meta.description && meta.description.trim() !== post.description.trim()) changed.push("description");
+      if (meta.keyphrase && A.normalize(meta.keyphrase) !== A.normalize(this.props.value)) changed.push("keyphrase");
+      return changed.filter(function (key) {
+        return !fields || !fields.length || fields.indexOf(key) !== -1;
+      });
     },
 
     toolbar: function (post, failing) {
@@ -1768,7 +1784,9 @@
   function cleanEdits(value) {
     return (Array.isArray(value) ? value : [])
       .filter(function (edit) {
-        return edit && typeof edit.fix === "string" && edit.fix.trim();
+        // An edit whose fix is its own quote changes nothing; models send
+        // them to report a check they decided to leave.
+        return edit && typeof edit.fix === "string" && edit.fix.trim() && edit.fix.trim() !== String(edit.where || "").trim();
       })
       .map(function (edit) {
         return { where: typeof edit.where === "string" ? edit.where : "", fix: edit.fix, why: typeof edit.why === "string" ? edit.why : "" };

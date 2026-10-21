@@ -305,6 +305,11 @@
           "FIX THESE CHECKS:",
           bullets(input.checks),
           "",
+          // Without this, a model asked to work the keyphrase into the title
+          // tends to change the keyphrase to match the title instead.
+          input.fields && input.fields.length && input.fields.indexOf("keyphrase") === -1
+            ? "Keep the focus keyphrase exactly as it is. Change the title and description to fit it.\n"
+            : "",
           "OPENING OF THE BODY:",
           // A headline job does not need the whole article, and a shorter
           // prompt is a faster first token.
@@ -316,7 +321,9 @@
     /** The SEO panel's fixes: the body half. */
     body: {
       json: true,
-      maxTokens: 3000,
+      // Every listed check gets an edit, and a word-count edit carries a
+      // whole paragraph twice (where and fix), so this is not small.
+      maxTokens: 8000,
       system: VOICE.concat(
         [""],
         SEO_RULES,
@@ -326,12 +333,15 @@
           "",
           "- Fix only the checks listed. Leave everything else exactly as it is.",
           "- Each edit is a replacement: `where` quotes enough of the existing text to locate it",
-          "  unambiguously, `fix` is the text that replaces it, `why` is one short clause.",
+          "  unambiguously, copied character for character from BODY, `fix` is the text that",
+          "  replaces it, and `why` is one short clause naming the check or checks it fixes.",
           "- For a word-count check, `where` may quote a paragraph to extend and `fix` is that",
           "  paragraph rewritten longer. To add a whole new section, use an empty `where`.",
           "- For an outbound-source check, do not fabricate a citation: leave the sentence as prose",
           "  and say in `why` what the writer should go and link.",
-          "- At most four edits, most valuable first. Return an empty array if the body needs nothing.",
+          "- Address every check listed. One edit may fix several checks; use as many edits as the",
+          "  checks need, most valuable first, and never two edits that quote overlapping text.",
+          "  Return an empty array only if no listed check can be fixed by editing the body.",
           "",
           JSON_ONLY,
           'Shape: {"edits": [{"where": "...", "fix": "...", "why": "..."}]}',
