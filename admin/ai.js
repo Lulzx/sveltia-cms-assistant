@@ -465,9 +465,15 @@
         { role: "user", content: spec.user(input) },
       ],
     };
+    // Reasoning models spend max_tokens on hidden reasoning before the answer,
+    // and a small budget like meta's can run out with nothing written. A site
+    // that does not want that sets e.g. `reasoning: { enabled: false }`.
+    if (config.reasoning) body.reasoning = config.reasoning;
     // With a schema attached the free router only picks models that support
     // structured output, which is the closest thing to a promise of JSON.
-    if (spec.json && spec.schema) {
+    // `structuredOutputs: false` leaves it to the prompt and readJson, for a
+    // model whose constrained decoding does worse than its plain JSON.
+    if (spec.json && spec.schema && config.structuredOutputs !== false) {
       body.response_format = {
         type: "json_schema",
         json_schema: { name: "assistant_" + task, strict: true, schema: spec.schema },
@@ -502,12 +508,17 @@
       var buffer = "";
       var content = "";
       var failure = null;
+      var finish = null;
 
       // SSE: "data: {json}" lines, ": comment" keep-alives, "data: [DONE]".
       function pump() {
         return reader.read().then(function (result) {
           if (result.done) {
             if (failure) throw new Error(failure);
+            // Not "returned nothing": a retry would hit the same limit.
+            if (finish === "length" && (spec.json || !content.trim())) {
+              throw new Error("The model ran out of tokens before finishing its answer.");
+            }
             if (!content.trim()) throw new Error("The model returned nothing. Try again.");
             return content;
           }
@@ -523,7 +534,9 @@
               // A provider can fail mid-stream; OpenRouter relays that as an
               // error frame rather than a status code.
               if (parsed.error && parsed.error.message) failure = parsed.error.message;
-              var delta = parsed.choices && parsed.choices[0] && parsed.choices[0].delta;
+              var choice = parsed.choices && parsed.choices[0];
+              if (choice && choice.finish_reason) finish = choice.finish_reason;
+              var delta = choice && choice.delta;
               if (delta && delta.content) {
                 content += delta.content;
                 if (onDelta) onDelta(content);
@@ -541,9 +554,9 @@
   }
 
   /**
-   * stream(), retried when OpenRouter's limiter answers or the model
-   * returns nothing. Under the free router each try may reach a different
-   * model, which is the point.
+   * stream(), retried when OpenRouter's limiter answers, the model returns
+   * nothing, or a JSON job gets prose back. Under the free router each try
+   * may reach a different model, which is the point.
    */
   function complete(task, input, options) {
     options = options || {};
@@ -552,11 +565,17 @@
     var signal = options.signal;
     var delays = [4000, 8000];
 
+    function parse(content) {
+      return spec.json ? readJson(content) : readMarkdown(content);
+    }
+
     function attempt() {
-      return stream(task, input, signal, options.onDelta).catch(function (error) {
-        var retriable = /^Rate limited|returned nothing/.test(error.message);
+      return stream(task, input, signal, options.onDelta).then(parse).catch(function (error) {
+        var prose = /answered in prose/.test(error.message);
+        var retriable = prose || /^Rate limited|returned nothing/.test(error.message);
         if (!retriable || tries >= delays.length || (signal && signal.aborted)) throw error;
-        var delay = delays[tries];
+        // Nothing to wait out when the answer was merely malformed.
+        var delay = prose ? 0 : delays[tries];
         tries += 1;
         if (options.onRetry) options.onRetry(tries, delay);
         return new Promise(function (resolve, reject) {
@@ -567,9 +586,7 @@
       });
     }
 
-    return attempt().then(function (content) {
-      return spec.json ? readJson(content) : readMarkdown(content);
-    });
+    return attempt();
   }
 
   // -------------------------------------------------------------- posts

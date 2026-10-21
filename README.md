@@ -130,8 +130,12 @@ A green check scores 2 points and an orange one scores 1. None of it blocks a sa
 
 - JSON is requested both with a `response_format` schema and in the prompt, then extracted from whatever comes back.
 - Markdown is stripped of added fences, title lines and front matter.
-- Rate-limit errors and empty replies are retried after 4 and then 8 seconds.
+- Rate-limit errors and empty replies are retried after 4 and then 8 seconds. JSON that doesn't parse is retried at once.
 - Every job streams and has a Cancel button and a 150-second timeout.
+
+**Reasoning models.** A reasoning model spends `max_tokens` on hidden reasoning before it writes anything, and the metadata fix has only 600. With a model like `inception/mercury-3`, the budget can run out before the answer starts, and the panel reports that the model ran out of tokens. Set `reasoning: { enabled: false }` in `assistant.config.mjs` to send OpenRouter's `reasoning` parameter and skip the hidden reasoning.
+
+**Structured output.** JSON jobs send a strict `response_format` schema as well as asking for JSON in the prompt. Some models do worse under the schema. With Mercury 3, about a third of fix requests came back cut off or repeating the article, against 2 in 48 without it. `structuredOutputs: false` drops the schema. A reply that still doesn't parse is retried straight away.
 
 ## Customising
 

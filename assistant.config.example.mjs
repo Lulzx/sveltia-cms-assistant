@@ -80,6 +80,14 @@ export default {
   // Default OpenRouter model; OPENROUTER_MODEL at build time overrides it.
   // model: "openrouter/free",
 
+  // Sent to OpenRouter as `reasoning`. A reasoning model can spend the whole
+  // token budget thinking and answer nothing; this turns that off.
+  // reasoning: { enabled: false },
+
+  // JSON jobs attach a strict response_format schema. false leaves JSON to the
+  // prompt instead, for a model whose constrained decoding misbehaves.
+  // structuredOutputs: false,
+
   // ---- build-only: not sent to the browser --------------------------------
 
   admin: {
